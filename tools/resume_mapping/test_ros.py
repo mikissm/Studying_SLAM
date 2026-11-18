@@ -12,6 +12,7 @@ from sensor_msgs_py import point_cloud2
 from nav_msgs.msg import Odometry
 from std_msgs.msg import Header
 from std_srvs.srv import Trigger
+import resume_mapper
 from resume_mapper import ResumeMapper
 from test_geometry import write
 
@@ -23,6 +24,11 @@ def main():
         src=Path(tmp)/'seed.pcd';out=Path(tmp)/'extended.pcd'
         rng=np.random.default_rng(31);scan=rng.uniform(-3,3,(1200,3)).astype(np.float32);write(src,scan)
         rclpy.init(args=['--ros-args','-p',f'map_path:={src}','-p',f'output_path:={out}','-p','cloud_topic:=/resume_test/cloud','-p','odom_topic:=/resume_test/odom'])
+        original_search=resume_mapper.search_align
+        def slow_search(*args,**kwargs):
+            time.sleep(1.2)  # exceed max_scan_age while executor is busy
+            return original_search(*args,**kwargs)
+        resume_mapper.search_align=slow_search
         mapper=ResumeMapper();driver=Node('resume_test_driver');ex=SingleThreadedExecutor();ex.add_node(mapper);ex.add_node(driver)
         clouds=driver.create_publisher(PointCloud2,'/resume_test/cloud',10);odoms=driver.create_publisher(Odometry,'/resume_test/odom',10)
         def pump(points,seconds=.8):
@@ -35,7 +41,7 @@ def main():
         def call(name):
             client=driver.create_client(Trigger,name)
             assert client.wait_for_service(timeout_sec=2),name
-            future=client.call_async(Trigger.Request());ex.spin_until_future_complete(future,timeout_sec=4)
+            future=client.call_async(Trigger.Request());ex.spin_until_future_complete(future,timeout_sec=10)
             assert future.done(),name
             response=future.result();assert response.success,response.message
             driver.destroy_client(client);return response
@@ -44,7 +50,14 @@ def main():
             call('/resume_mapping/start');assert mapper.active
             before=len(mapper.store.cells)
             pump(np.vstack((scan,[[5.,5.,0.]])),1.2)
+            assert mapper.active,mapper.error
+            assert mapper.awaiting_scan_until is None
             assert len(mapper.store.cells)>before
+            # A real input outage must still stop integration after the wait.
+            end=time.monotonic()+1.8
+            while time.monotonic()<end:ex.spin_once(timeout_sec=.05)
+            assert not mapper.active
+            assert '시간' in mapper.error
             call('/resume_mapping/pause');assert not mapper.active
             call('/resume_mapping/save');assert out.exists()
             print('ROS PASS: synchronized input → ICP → merge → pause → save')

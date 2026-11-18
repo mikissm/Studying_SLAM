@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Saved PCD + FAST-LIO odometry continuation. Does not restore a PGO graph."""
 import json
+import time
 from pathlib import Path
 import numpy as np
 from scipy.spatial.transform import Rotation
@@ -32,7 +33,7 @@ class ResumeMapper(Node):
         if self.p['update_hz']<=0 or not 0<self.p['min_overlap']<=1 or self.p['max_rmse']<=0 or self.p['max_scan_age']<=0:
             raise ValueError('잘못된 주기/정합 파라미터')
         self.store=MapStore(self.p['map_path'],self.p['resolution'],self.p['max_voxels'])
-        self.target=self.store.points();self.offset=None;self.latest=None;self.last_stamp=None
+        self.target=self.store.points();self.offset=None;self.latest=None;self.last_stamp=None;self.awaiting_scan_until=None
         self.initial=pose_matrix(*[self.p['initial_'+k] for k in ['x','y','z','yaw']])
         self.diagnostics={};self.error='초기 위치 확인 후 /resume_mapping/start 호출 필요'
         self.pub=self.create_publisher(PointCloud2,'/resume_mapping/map',QoSProfile(depth=1,durability=DurabilityPolicy.TRANSIENT_LOCAL))
@@ -85,12 +86,15 @@ class ResumeMapper(Node):
                 target=self.target[np.linalg.norm(self.target-self.initial[:3,3],axis=1)<15]
                 body,self.diagnostics=search_align(scan,target,self.initial,min_overlap=self.p['min_overlap'],max_rmse=self.p['max_rmse'])
                 self.offset=body@np.linalg.inv(odom)
+            # ICP blocks this single-threaded executor. Wait for a fresh scan
+            # callback instead of declaring its pre-ICP input a sensor failure.
+            self.awaiting_scan_until=time.monotonic()+3.0
             self.active=True;self.error='';res.success=True;res.message='정합 승인; 누적 시작 '+json.dumps(self.diagnostics)
         except Exception as e:res.success=False;res.message=str(e);self.error=str(e)
         return res
 
     def pause(self,req,res):
-        self.active=False;res.success=True;res.message='누적 일시 정지';return res
+        self.active=False;self.awaiting_scan_until=None;res.success=True;res.message='누적 일시 정지';return res
 
     def save(self,req,res):
         try:res.message=self.store.save(self.p['output_path']);res.success=True
@@ -103,6 +107,17 @@ class ResumeMapper(Node):
 
     def tick(self):
         try:
+            if self.awaiting_scan_until is not None:
+                # A start request is accepted, but integration resumes only
+                # after a genuinely fresh callback (stale queued data excluded).
+                try:self.fresh()
+                except ValueError:
+                    if time.monotonic()<self.awaiting_scan_until:
+                        self.publish_status();return
+                    self.awaiting_scan_until=None
+                    raise
+                self.awaiting_scan_until=None
+
             if self.offset is not None:
                 _,_,stamp=self.fresh()
                 tf=TransformStamped();tf.header.frame_id=self.p['map_frame'];tf.child_frame_id=self.p['odom_frame'];tf.header.stamp=stamp
@@ -114,7 +129,10 @@ class ResumeMapper(Node):
                 if key!=self.last_stamp:
                     self.store.add(transform(scan,self.offset@odom));self.last_stamp=key;self.publish_map()
         except Exception as e:self.active=False;self.error=str(e)
-        status=String();status.data=json.dumps({'active':self.active,'aligned':self.offset is not None,'voxels':len(self.store.cells),'error':self.error,**self.diagnostics});self.status_pub.publish(status)
+        self.publish_status()
+
+    def publish_status(self):
+        status=String();status.data=json.dumps({'active':self.active,'aligned':self.offset is not None,'waiting_for_scan':self.awaiting_scan_until is not None,'voxels':len(self.store.cells),'error':self.error,**self.diagnostics});self.status_pub.publish(status)
 
 
 def main():
