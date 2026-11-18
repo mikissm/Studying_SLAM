@@ -4,7 +4,7 @@ import time
 import numpy as np
 from scipy import ndimage
 
-REASONS={1:'지면 미확인',2:'몸체 높이 구간 장애물',4:'머리 위 공간 부족',8:'몸체 반경·안전 여유 충돌',16:'국소 경사 초과',32:'몸체 아래 미관측 지면'}
+REASONS={1:'지면 미확인',2:'몸체 높이 구간 장애물',4:'머리 위 공간 부족',8:'몸체 반경·안전 여유 충돌',16:'국소 경사 초과',32:'몸체 아래 미관측 지면',64:'몸체 주변 경사 여유'}
 
 
 def config(p):
@@ -63,23 +63,45 @@ def evaluate(result,robot,points,rotation):
     # Distance to occupied CELL AREA, not just its center. Pad the map so the
     # circular footprint also respects the map boundary / unknown terrain.
     radius=p['radius']+p['margin'];cell_half_diag=res/np.sqrt(2)
+    sources={}
     if occupied.any():
-        distance=ndimage.distance_transform_edt(~occupied)*res
+        distance,indices=ndimage.distance_transform_edt(~occupied,return_indices=True)
+        sources[8]=indices
+        distance=distance*res
         inflated=distance<=radius+cell_half_diag+1e-9
         codes[inflated&~occupied]|=8
     if p['strictunknown']:
         padded=np.pad(known,1,constant_values=False)
-        distance=ndimage.distance_transform_edt(padded)[1:-1,1:-1]*res
+        distance,indices=ndimage.distance_transform_edt(padded,return_indices=True)
+        sources[32]=indices[:,1:-1,1:-1]-1
+        distance=distance[1:-1,1:-1]*res
         codes[known&(distance<=radius+cell_half_diag+1e-9)]|=32
     # The complete body footprint must fit on allowed slopes as well.
     if steep.any() and radius:
-        codes[(ndimage.distance_transform_edt(~steep)*res<=radius+cell_half_diag)&~steep]|=16
+        distance,indices=ndimage.distance_transform_edt(~steep,return_indices=True)
+        sources[64]=indices
+        codes[(distance*res<=radius+cell_half_diag)&~steep]|=64
     traversable=known&(codes==0)
     xy=np.floor((centers[:,:2]-origin)/res).astype(int)
     cellcodes=codes[xy[:,1],xy[:,0]]
+    # Retain the actual nearest cause, including unknown cells beyond map bounds.
+    causes=[]
+    for x,y in xy:
+        items=[]
+        for bit,label in REASONS.items():
+            if not int(codes[y,x])&bit:continue
+            sy,sx=(sources[bit][:,y,x] if bit in sources else (y,x))
+            valid=0<=sy<ny and 0<=sx<nx
+            height=float(reference[sy,sx]) if valid else float(reference[y,x])
+            item={'bit':bit,'label':label,'source':[float(origin[0]+(sx+.5)*res),float(origin[1]+(sy+.5)*res),height],
+                  'distance_m':float(np.hypot(sx-x,sy-y)*res)}
+            if bit in (16,64):item['slope_deg']=float(slope[sy,sx])
+            if bit in (2,4,8):item['point_count']=int(hits[sy,sx])
+            items.append(item)
+        causes.append(items)
     quality=np.zeros(ground.shape,np.uint8);quality[xy[:,1],xy[:,0]]=classes
     return {'robot':p,'codes':codes,'slope':slope,'allowed':traversable,'quality':quality,
-            'cell_codes':cellcodes,'clearance':clearance,'ground':ground,'meta':meta}
+            'cell_causes':causes,'footprint_limit_m':radius+cell_half_diag,'cell_codes':cellcodes,'clearance':clearance,'ground':ground,'meta':meta}
 
 
 def transition(ev,a,b):

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import {installPlanner} from './planner-ui.js';
+import {installPlanner,robotColor} from './planner-ui.js';
 let plannerUI=null;
 import {OrbitControls} from './vendor/OrbitControls.js';
 const $=id=>document.getElementById(id);
@@ -238,7 +238,7 @@ function paint(){
   let s=0;
   if(mode==='ground'){if(shown){s=1;ramp((z-z0)/(z1-z0||1),COL);}}
   else if(mode==='passage'){
-   if(shown){s=1;if(robotCodes?robotCodes[i]!==0:blocked[i])COL.copy(BLOCKED);else ramp((z-z0)/(z1-z0||1),COL);}
+   if(shown){s=1;if(robotCodes?robotCodes[i]!==0:blocked[i]){if(robotCodes)COL.set(robotColor(robotCodes[i]));else COL.copy(BLOCKED);}else ramp((z-z0)/(z1-z0||1),COL);}
    else if(r===6&&showO){s=.5;COL.copy(NOFLOOR);}
   }else{ // 진단: 모든 셀
    s=r===6?.5:1;
@@ -263,7 +263,9 @@ function renderLegend(){
   grad('바닥 높이 (Z)',z[0],z[1],'막힌 바닥도 같은 높이색으로 칠합니다. 후보에서 제외된 셀과 바닥을 못 찾은 장애물은 이 보기에 없습니다.');
  }else if(mode==='passage'){
   add('h3','','통과 가능성 (후보)');
-  sw('#ff3b3b','<b>막힘</b> — 로봇 판정이 있으면 반경·경사·미관측 조건 포함. 셀 클릭으로 사유 확인');
+  const reasons=plannerUI?.legend();
+  if(reasons){for(const r of reasons)sw(r.color,`${r.label} <b>${r.count.toLocaleString()}</b>`);add('div','legend-note','중복 사유는 위쪽 색 우선 · 수는 중복 포함. 셀 클릭: 전체 사유 및 원인 연결선.');}
+  else sw('#ff3b3b','막힘 — 로봇 판정 갱신 후 상세 색상 표시');
   add('div','gradient','').style.background=GRAD;add('div','legend-range',`<span>${z[0]}</span><span>${z[1]}</span>`);
   add('div','legend-note','위 막대 = 막히지 않은 바닥 (높이색). 안전을 보장하지 않는 후보입니다.');
   sw('#e040fb','<b>작은 칸</b> — 바닥 없음, 장애물만 감지',true);

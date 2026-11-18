@@ -28,6 +28,28 @@ class PlannerTests(unittest.TestCase):
         e=ev(obstacles=[(5,5)],radius=.15)
         self.assertTrue(e['codes'][5,5]&2);self.assertTrue(e['codes'][5,6]&8)
         self.assertFalse(plan(e,[.55,.55],[.85,.85])['ok'])
+    def test_diagnostic_sources_and_overlap(self):
+        import json
+        e=ev(obstacles=[(0,3)],radius=.15,strictunknown=True)
+        items=e['cell_causes'][1*11+3]
+        bybit={c['bit']:c for c in items}
+        self.assertIn(8,bybit);self.assertIn(32,bybit)
+        np.testing.assert_allclose(bybit[8]['source'][:2],[.35,.05])
+        self.assertEqual(bybit[8]['point_count'],4)
+        self.assertAlmostEqual(bybit[8]['distance_m'],.1)
+        self.assertTrue(any(v<0 for v in bybit[32]['source'][:2]))
+        json.dumps(e['cell_causes'],allow_nan=False)
+
+    def test_steep_footprint_has_distinct_source(self):
+        r,p=fixture();r[4][:,6:]=.4
+        p=r[0].copy();p[:,2]=r[4].ravel()
+        e=evaluate(r,{'radius':.15,'margin':0,'maxslope':25,'strictunknown':False},p,lambda _:np.eye(3))
+        self.assertTrue(e['codes'][5,4]&64)
+        self.assertFalse(e['codes'][5,4]&16)
+        cause=next(c for c in e['cell_causes'][5*11+4] if c['bit']==64)
+        self.assertGreater(cause['slope_deg'],25)
+        self.assertFalse(e['allowed'][5,4])
+
     def test_unknown_footprint_and_map_boundary(self):
         e=ev(radius=.15,strictunknown=True)
         self.assertTrue(e['codes'][0,0]&32);self.assertTrue(e['allowed'][5,5])

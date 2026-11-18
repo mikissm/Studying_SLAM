@@ -380,6 +380,7 @@ class Handler(SimpleHTTPRequestHandler):
                 ev=evaluate_robot(saved[1],request.get('robot',{}),points,rotation)
                 response={'robot':ev['robot'],'cell_codes':ev['cell_codes'].tolist(),
                           'cell_slopes':ev['slope'][np.floor((saved[1][0][:,1]-ev['meta']['origin_xy'][1])/ev['meta']['resolution']).astype(int),np.floor((saved[1][0][:,0]-ev['meta']['origin_xy'][0])/ev['meta']['resolution']).astype(int)].tolist(),
+                          'cell_causes':ev['cell_causes'],'footprint_limit_m':ev['footprint_limit_m'],
                           'allowed_cells':int(ev['allowed'].sum()),'reason_labels':ROBOT_REASONS}
                 labels,n=ndimage.label(ev['allowed'])
                 suggestions=[]
