@@ -24,3 +24,7 @@ python tools/elevation_viewer/server.py
 상세 사용법과 알고리즘 한계는 [Elevation Lab 사용 설명서](tools/elevation_viewer/README.md)를 참고하세요.
 
 원본 지도 파일은 포함하지 않습니다. 통과 가능 후보는 실제 로봇의 안전을 보장하지 않습니다.
+
+## 저장 지도에서 이어서 매핑 (ROS 2 Jazzy)
+
+FAST-LIO 점군·odometry를 저장 PCD에 초기 정합한 뒤 새 점군을 누적하고 별도 PCD로 저장하는 도구를 추가했습니다. 실행 순서, 초기 위치 지정, PGO와의 차이는 [재개 매핑 설명서](tools/resume_mapping/README.md)를 참고하세요.
