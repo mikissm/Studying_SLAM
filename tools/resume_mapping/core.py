@@ -56,6 +56,55 @@ def align(scan, target, guess, correspondence=.6, min_overlap=.55, max_rmse=.15)
     return pose,{'overlap':overlap,'rmse_m':rmse}
 
 
+def search_align(scan, target, guess, min_overlap=.55, max_rmse=.15):
+    """Bounded coarse pose search followed by gated ICP; no global search."""
+    import time
+    started=time.perf_counter()
+    coarse=voxel(scan,.25);target_coarse=voxel(target,.2)
+    if len(coarse)<30 or len(target_coarse)<30:raise ValueError('정합 점 부족 (최소 30점)')
+    if len(coarse)>700:coarse=coarse[np.linspace(0,len(coarse)-1,700).astype(int)]
+    tree=cKDTree(target_coarse);ranked=[]
+    # Clipped all-point loss penalizes missing coverage instead of rewarding
+    # tiny matching subsets. Rotation is around the sensor, not map origin.
+    for yaw in np.deg2rad(np.arange(-45,46,15)):
+        rot=Rotation.from_euler('z',yaw).as_matrix()@guess[:3,:3]
+        rotated=coarse@rot.T
+        for x in [-1.,-.5,0.,.5,1.]:
+            for y in [-1.,-.5,0.,.5,1.]:
+                for z in [-.75,-.375,0.,.375,.75]:
+                    pos=guess[:3,3]+[x,y,z]
+                    dist,_=tree.query(rotated+pos)
+                    loss=float(np.minimum(dist,.6).mean())
+                    seed=np.eye(4);seed[:3,:3]=rot;seed[:3,3]=pos
+                    ranked.append((loss,seed))
+    ranked.sort(key=lambda v:v[0])
+    seeds=[guess.copy()]
+    # Non-maximum suppression keeps distinct basins for refinement.
+    for _,seed in ranked:
+        if any(np.linalg.norm(seed[:3,3]-p[:3,3])<.4 and
+               Rotation.from_matrix(seed[:3,:3]@p[:3,:3].T).magnitude()<np.deg2rad(14) for p in seeds):continue
+        seeds.append(seed)
+        if len(seeds)>=13:break
+    fine=voxel(scan,.12)
+    if len(fine)>6000:fine=fine[np.linspace(0,len(fine)-1,6000).astype(int)]
+    fine_tree=cKDTree(voxel(target,.12));accepted=[];failures=[]
+    for seed in seeds:
+        try:
+            pose,stats=align(scan,target,seed,min_overlap=min_overlap,max_rmse=max_rmse)
+            shift=float(np.linalg.norm(pose[:3,3]-guess[:3,3]))
+            angle=float(np.rad2deg(Rotation.from_matrix(pose[:3,:3]@guess[:3,:3].T).magnitude()))
+            if shift>2 or angle>60:continue
+            dist,_=fine_tree.query(transform(fine,pose))
+            accepted.append((float(np.minimum(dist,.6).mean()),pose,stats,shift,angle))
+        except ValueError as e:failures.append(str(e))
+    if not accepted:
+        raise ValueError('주변 후보 탐색 후 정합 실패: '+(failures[0] if failures else '보정량 초과'))
+    _,pose,stats,shift,angle=min(accepted,key=lambda v:v[0])
+    stats.update(search_candidates=len(ranked),refined_candidates=len(seeds),
+                 correction_m=shift,correction_deg=angle,elapsed_s=round(time.perf_counter()-started,2))
+    return pose,stats
+
+
 class MapStore:
     def __init__(self, source, resolution=.1, max_voxels=2000000):
         if resolution<=0 or max_voxels<1:raise ValueError('잘못된 맵 크기 설정')

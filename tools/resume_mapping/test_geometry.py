@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 import numpy as np
-from core import MapStore, align, transform, pose_matrix, read_pcd
+from core import MapStore, align, search_align, transform, pose_matrix, read_pcd
 
 
 def write(path,points):
@@ -19,6 +19,21 @@ class ResumeTests(unittest.TestCase):
         odom=pose_matrix(4,-2,.1,.4);offset=aligned@np.linalg.inv(odom)
         np.testing.assert_allclose(transform(scan,offset@odom),target,atol=.05)
         self.assertGreater(stats['overlap'],.95)
+
+    def test_coarse_pose_search_recovers_rough_click(self):
+        rng=np.random.default_rng(14)
+        # Three unequal perpendicular surfaces, a challenging larger yaw/Z error.
+        scan=rng.uniform(-3,3,(1800,3));scan[:600,0]=-2;scan[600:1200,1]=2;scan[1200:,2]=-1
+        truth=pose_matrix(1.,-.5,.6,np.deg2rad(35))
+        target=transform(scan,truth)
+        pose,stats=search_align(scan,target,np.eye(4))
+        np.testing.assert_allclose(pose,truth,atol=.035)
+        self.assertGreater(stats['search_candidates'],100)
+        self.assertLess(stats['rmse_m'],.15)
+
+    def test_search_rejects_unrelated_map(self):
+        rng=np.random.default_rng(1)
+        with self.assertRaises(ValueError):search_align(rng.random((100,3)),rng.random((100,3))+20,np.eye(4))
 
     def test_unrelated_scan_rejected(self):
         rng=np.random.default_rng(2)

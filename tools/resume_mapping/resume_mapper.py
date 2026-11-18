@@ -15,7 +15,7 @@ from std_msgs.msg import Header, String
 from std_srvs.srv import Trigger
 from tf2_ros import TransformBroadcaster
 from message_filters import Subscriber, ApproximateTimeSynchronizer
-from core import MapStore, align, pose_matrix, transform
+from core import MapStore, search_align, pose_matrix, transform
 
 
 class ResumeMapper(Node):
@@ -83,7 +83,7 @@ class ResumeMapper(Node):
             if self.offset is None:
                 # Initial guess is the BODY pose in the saved-map frame now.
                 target=self.target[np.linalg.norm(self.target-self.initial[:3,3],axis=1)<15]
-                body,self.diagnostics=align(scan,target,self.initial,min_overlap=self.p['min_overlap'],max_rmse=self.p['max_rmse'])
+                body,self.diagnostics=search_align(scan,target,self.initial,min_overlap=self.p['min_overlap'],max_rmse=self.p['max_rmse'])
                 self.offset=body@np.linalg.inv(odom)
             self.active=True;self.error='';res.success=True;res.message='정합 승인; 누적 시작 '+json.dumps(self.diagnostics)
         except Exception as e:res.success=False;res.message=str(e);self.error=str(e)

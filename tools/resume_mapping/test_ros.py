@@ -1,4 +1,5 @@
 """Run after sourcing Jazzy; synthetic ROS stream, no hardware required."""
+import os
 import tempfile
 import time
 from pathlib import Path
@@ -16,6 +17,8 @@ from test_geometry import write
 
 
 def main():
+    # Isolate test services/TF from any running robot.
+    os.environ["ROS_DOMAIN_ID"]="178"
     with tempfile.TemporaryDirectory() as tmp:
         src=Path(tmp)/'seed.pcd';out=Path(tmp)/'extended.pcd'
         rng=np.random.default_rng(31);scan=rng.uniform(-3,3,(1200,3)).astype(np.float32);write(src,scan)
