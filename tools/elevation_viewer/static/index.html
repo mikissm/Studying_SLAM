@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Elevation Lab · 바닥 표면 / 통과 가능성</title>
+<link rel="stylesheet" href="style.css">
+<script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
+</head>
+<body>
+<header>
+  <div class="brand"><span class="logo" aria-hidden="true">▱</span><div>Elevation Lab<small>PCD → 바닥 표면 · 통과 가능성</small></div></div>
+  <div class="file"><span id="filename">맵을 선택해 주세요</span><small id="fileinfo">로컬 파일 · 단위 m · Z축 수직 가정</small></div>
+  <button id="togglepanel" type="button" aria-controls="panel" aria-expanded="true" title="파라미터 패널을 접어 뷰포트를 넓힙니다">◧ 패널</button>
+  <button id="pickfile" class="primary" type="button">＋ PCD 열기</button>
+  <input id="file" type="file" accept=".pcd" hidden aria-label="PCD 파일 선택">
+</header>
+<main>
+<aside id="panel" aria-label="파라미터와 저장">
+  <div class="scroll">
+    <section class="block" aria-labelledby="t-presets">
+      <h2 id="t-presets">빠른 설정</h2>
+      <div class="presets">
+        <button type="button" data-preset="default">기본</button>
+        <button type="button" data-preset="strict">엄격</button>
+        <button type="button" data-preset="sparse">희소 맵 · 관대</button>
+      </div>
+      <p class="hint">격자 크기·로봇 높이·Z 범위·회전은 유지하고 나머지만 바꿉니다. 아래 그룹을 펼쳐 세부 조정하세요.</p>
+    </section>
+    <section class="block" aria-labelledby="t-params">
+      <h2 id="t-params">파라미터</h2>
+      <p class="hint">바닥 표면(후보 선택·연결)과 통과 가능성(전체 점군의 장애물·머리 위 높이)은 따로 계산됩니다.</p>
+      <div id="parameters"></div>
+    </section>
+    <section class="block" aria-labelledby="t-export">
+      <h2 id="t-export">결과 저장</h2>
+      <div class="export">
+        <button type="button" data-export="npz" title="높이(막힌 바닥 포함)·통과 가능·장애물·관측/보간/복구·여유 높이(clearance)">NPZ · 높이+점유+여유고</button>
+        <button type="button" data-export="pcd">바닥 PCD</button>
+        <button type="button" data-export="csv">XYZ CSV</button>
+        <button type="button" data-export="json">파라미터 JSON</button>
+      </div>
+      <p class="hint">회전 보정 좌표로 저장합니다. NPZ에는 막힌 바닥을 포함한 높이, 통과 가능(점유), 장애물, 관측·보간·복구 구분, 머리 위 여유 높이(clearance)가 들어 있습니다. 빈 셀은 NaN이며 주행 가능 영역을 보장하지 않습니다.</p>
+      <button id="importbtn" type="button" class="linklike">저장한 파라미터 JSON 불러오기</button>
+      <input id="config" type="file" accept=".json" hidden aria-label="파라미터 JSON 선택">
+    </section>
+  </div>
+  <div class="dock" aria-label="계산 및 상태">
+    <div id="progress" hidden role="progressbar" aria-label="계산 진행 중"><i></i></div>
+    <div class="dock-row">
+      <label class="auto"><input id="auto" type="checkbox" checked> 변경 시 자동 계산</label>
+      <button id="apply" class="primary" type="button">다시 계산</button>
+    </div>
+    <div class="dock-row"><span id="state" class="pill idle">대기</span><div id="status" role="status" aria-live="polite">맵을 불러오는 중…</div></div>
+  </div>
+</aside>
+<section class="workspace">
+  <div class="toolbar">
+    <div class="segmented" id="modes" role="group" aria-label="보기 선택">
+      <button type="button" data-mode="ground" aria-pressed="true">① 바닥 표면</button>
+      <button type="button" data-mode="passage" aria-pressed="false">② 통과 가능성</button>
+      <button type="button" data-mode="rejected" aria-pressed="false">③ 추론 진단</button>
+      <button type="button" data-mode="raw" aria-pressed="false">원본 점군</button>
+    </div>
+    <div class="views" role="group" aria-label="카메라">
+      <button type="button" id="fit">전체</button><button type="button" id="top">위</button><button type="button" id="front">옆</button><button type="button" id="iso">3D</button>
+    </div>
+  </div>
+  <div class="display-options" role="group" aria-label="표시 옵션">
+    <label><input id="overlay" type="checkbox"> 원본 점 겹치기</label>
+    <label for="opacity">투명도 <input id="opacity" type="range" min="0.05" max="1" step="0.05" value="0.35"></label>
+    <label for="pointsize">점 크기 <input id="pointsize" type="range" min="1" max="6" step="0.5" value="2.5"></label>
+    <label for="exaggeration">높이 강조 <select id="exaggeration"><option value="1">1×</option><option value="2">2×</option><option value="5">5×</option><option value="10">10×</option></select></label>
+    <label id="diagwrap" for="diagkind" hidden>진단 표시 <select id="diagkind"><option value="reason">제외·추정 사유</option><option value="clearance">머리 위 여유</option></select></label>
+    <label><input id="showinterp" type="checkbox" checked> 보간 셀</label>
+    <label><input id="showrec" type="checkbox" checked> 복구 셀</label>
+    <label><input id="obstacles" type="checkbox" checked> 바닥 없는 장애물</label>
+    <label><input id="grid" type="checkbox" checked> 기준 격자</label>
+  </div>
+  <div id="viewport">
+    <div class="viewport-label"><span id="viewlabel">바닥 표면</span><span id="viewhelp"></span></div>
+    <div id="stale" hidden>⚠ 오래된 결과 — 변경한 파라미터가 아직 반영되지 않았습니다</div>
+    <div id="empty">PCD 파일을 불러오면 여기에 표시됩니다.</div>
+    <div id="legend" aria-label="범례"></div>
+    <div class="navigation">드래그 회전 · 휠 확대 · 우클릭 이동 · 셀 클릭 시 상세 정보 · 기준 격자 1 m</div>
+    <div id="pick" hidden role="status"></div>
+  </div>
+  <footer>
+    <div><small>바닥 표면 셀</small><strong id="surf">—</strong></div>
+    <div><small>통과 후보 셀</small><strong id="trav">—</strong></div>
+    <div><small>막힌 바닥 셀</small><strong id="blk">—</strong></div>
+    <div><small>후보 표면 수</small><strong id="cand">—</strong></div>
+    <div><small>바닥 면적</small><strong id="area">—</strong></div>
+    <div><small>높이 범위</small><strong id="range">—</strong></div>
+    <div><small>계산 시간</small><strong id="elapsed">—</strong></div>
+    <div class="note">통과 후보는 로봇 안전을 보장하지 않습니다.<br><span id="algo"></span></div>
+  </footer>
+</section>
+</main>
+<script type="module" src="app.js"></script>
+</body>
+</html>
