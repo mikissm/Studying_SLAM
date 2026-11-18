@@ -32,7 +32,13 @@ ros2 launch fastlio2 lio_launch.py
   -p initial_x:=0.0 -p initial_y:=0.0 -p initial_z:=0.0 -p initial_yaw:=0.0
 ```
 
-RViz Fixed Frame을 `map`으로 설정하고 PointCloud2 `/resume_mapping/map`을 추가합니다. QoS durability는 `Transient Local`로 설정하면 시작 시 저장 맵도 바로 보입니다. RViz **2D Pose Estimate** (`/initialpose`, frame `map`)로 초기 위치를 다시 설정할 수도 있습니다. 바닥과 센서 높이가 다르면 초기 Z도 실제 body 높이에 맞춰야 합니다. 2D Pose Estimate는 보통 Z=0이므로 CLI의 initial_z가 필요한 환경에서는 CLI를 사용합니다.
+저장 지도 전용 설정으로 RViz를 열면 아래 설정이 자동 적용됩니다 (기존 FAST-LIO RViz 창과 구분하세요).
+
+```bash
+rviz2 -d /home/ssm/slam_ws/Studying_SLAM/tools/resume_mapping/resume_mapping.rviz
+```
+
+수동으로 설정하려면 RViz Fixed Frame을 `map`으로 설정하고 PointCloud2 `/resume_mapping/map`을 추가합니다. QoS durability는 `Transient Local`로 설정하면 시작 시 저장 맵도 바로 보입니다. RViz **2D Pose Estimate** (`/initialpose`, frame `map`)로 초기 위치를 다시 설정할 수도 있습니다. 바닥과 센서 높이가 다르면 초기 Z도 실제 body 높이에 맞춰야 합니다. 2D Pose Estimate는 보통 Z=0이므로 CLI의 initial_z가 필요한 환경에서는 CLI를 사용합니다.
 
 4. 초기 위치를 확인한 뒤 시작합니다. 서비스 성공 응답에는 overlap과 RMSE가 포함됩니다. ICP는 가까운 초기 위치를 필요로 하며 반복 구조에서 잘못 정합될 수 있으므로, RViz에서 기존 벽과 현재 점군의 겹침을 확인한 뒤 이동합니다. 승인 전에는 누적하지 않습니다.
 
