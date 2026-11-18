@@ -10,7 +10,8 @@ PCD 파일에서 지면 표면을 추출하고, 로봇 높이에 따른 장애�
 - 바닥 높이와 전체 원본 점군의 장애물 판정 분리
 - 희소 지면 복구·보간과 출처 구분
 - 파라미터 조정, 3D 회전·이동, 표면/통과 가능성/진단 보기
-- NPZ·PCD·CSV·파라미터 JSON 저장
+- 원형 로봇 반경·높이·단차·경사 검사와 지형 A* 경로 계획
+- NPZ·PCD·CSV·파라미터 JSON 및 경로 JSON 저장
 
 ```bash
 git clone https://github.com/mikissm/Studying_SLAM.git

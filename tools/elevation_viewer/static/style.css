@@ -127,3 +127,4 @@ footer .note{font-size:11px;color:var(--muted);line-height:1.5;margin-left:auto}
  .navigation{display:none}
  footer .note{display:none}
 }
+.robot-fields{display:grid;grid-template-columns:1fr 1fr;gap:9px}.robot-fields label{font-size:11px;color:#c4d8e5}.robot-fields input{display:block;width:100%;margin-top:4px;background:#0d1923;border:1px solid #4c6579;border-radius:5px;padding:6px;color:#eaf8ff}.robot-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:10px 0}.robot-actions button{font-size:11px;padding:7px 4px}.robot-check{display:block;font-size:11px;margin:9px 0}#robot-status{font-size:11px;line-height:1.7;white-space:pre-line;overflow-wrap:anywhere;margin:9px 0}#robot-download{font-size:11px}

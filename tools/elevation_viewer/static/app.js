@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import {installPlanner} from './planner-ui.js';
+let plannerUI=null;
 import {OrbitControls} from './vendor/OrbitControls.js';
 const $=id=>document.getElementById(id);
 
@@ -121,7 +123,7 @@ function validate(){
  return null;
 }
 function changed(){
- generation++;pending=true;setExport(false);saveStore();clearTimeout(timer);
+ generation++;pending=true;setExport(false);saveStore();clearTimeout(timer);plannerUI?.invalidateSurface();
  const bad=validate();
  if(result)markStale(true);
  if(bad){setState('error','입력 확인');status(bad,true);return;}
@@ -157,7 +159,7 @@ async function processMap(){
   if(version!==generation){pending=true;return;}
   result=next;result.blocked=Array.isArray(next.blocked)?next.blocked:next.reason.map(v=>v===6);
   result.clearance=Array.isArray(next.clearance)?next.clearance:next.reason.map(()=>null);
-  buildCells();transformRaw();helpers();paint();renderLegend();
+  plannerUI?.setResult(result);buildCells();transformRaw();helpers();paint();renderLegend();
   if(fitPending){view('iso');fitPending=false;}
   markStale(false);setExport(true);setState('ok','최신');$('pick').hidden=true;
   summarize();
@@ -228,13 +230,15 @@ function paint(){
  const {cells,reason,blocked,clearance}=result;
  const showI=$('showinterp').checked,showR=$('showrec').checked,showO=$('obstacles').checked,diag=$('diagkind').value;
  const [z0,z1]=stats.z||[0,1],[c0,c1]=stats.c||[0,1];
+ const robotCodes=plannerUI?.codes();
+ if(mode==='passage'&&robotCodes)$('viewhelp').textContent='로봇 기준 차단 영역 · 셀 클릭으로 사유 확인 · 단차는 이동 간선에서 검사';
  for(let i=0;i<cells.length;i++){
   const [x,y,z]=cells[i],r=reason[i],floor=r===0||r===5||r===7;
   const shown=floor&&(r!==5||showI)&&(r!==7||showR);
   let s=0;
   if(mode==='ground'){if(shown){s=1;ramp((z-z0)/(z1-z0||1),COL);}}
   else if(mode==='passage'){
-   if(shown){s=1;if(blocked[i])COL.copy(BLOCKED);else ramp((z-z0)/(z1-z0||1),COL);}
+   if(shown){s=1;if(robotCodes?robotCodes[i]!==0:blocked[i])COL.copy(BLOCKED);else ramp((z-z0)/(z1-z0||1),COL);}
    else if(r===6&&showO){s=.5;COL.copy(NOFLOOR);}
   }else{ // 진단: 모든 셀
    s=r===6?.5:1;
@@ -259,7 +263,7 @@ function renderLegend(){
   grad('바닥 높이 (Z)',z[0],z[1],'막힌 바닥도 같은 높이색으로 칠합니다. 후보에서 제외된 셀과 바닥을 못 찾은 장애물은 이 보기에 없습니다.');
  }else if(mode==='passage'){
   add('h3','','통과 가능성 (후보)');
-  sw('#ff3b3b','<b>막힘</b> — 바닥은 있으나 장애물·머리 위·벽 여유로 막힘');
+  sw('#ff3b3b','<b>막힘</b> — 로봇 판정이 있으면 반경·경사·미관측 조건 포함. 셀 클릭으로 사유 확인');
   add('div','gradient','').style.background=GRAD;add('div','legend-range',`<span>${z[0]}</span><span>${z[1]}</span>`);
   add('div','legend-note','위 막대 = 막히지 않은 바닥 (높이색). 안전을 보장하지 않는 후보입니다.');
   sw('#e040fb','<b>작은 칸</b> — 바닥 없음, 장애물만 감지',true);
@@ -326,6 +330,7 @@ renderer.domElement.addEventListener('pointerup',e=>{
  raycaster.setFromCamera(new THREE.Vector2((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1),camera);
  const hit=raycaster.intersectObject(mesh).find(h=>visFlags[h.instanceId]);
  if(!hit){$('pick').hidden=true;return;}
+ if(e.button===0&&plannerUI?.click(hit.instanceId))return;
  describe(hit.instanceId);
 });
 function describe(i){
@@ -335,7 +340,7 @@ function describe(i){
  const head=c==null?'측정 안 됨':`${c.toFixed(2)} m (설정 로봇 높이 ${(+p.robotheight).toFixed(2)} m)`;
  const t=$('pick');
  t.textContent=`바닥 표면: ${surface}\n통과 가능성: ${pass}\n머리 위 여유: ${head}\nX ${x.toFixed(3)} · Y ${y.toFixed(3)} · Z ${z.toFixed(3)} m\n점 ${result.counts[i]} · 높이 분산 ${result.roughness[i].toFixed(3)} m`;
- t.classList.toggle('blocked',!!b);t.hidden=false;
+ t.textContent+=plannerUI?.detail(i)||'';t.classList.toggle('blocked',!!b);t.hidden=false;
 }
 
 /* ───────── 파일 불러오기 ───────── */
@@ -387,6 +392,8 @@ $('config').onchange=async e=>{
  }catch(err){setState('error','오류');status(err.message,true);}
  finally{e.target.value='';}
 };
+
+plannerUI=installPlanner({api,content,setMode,repaint:()=>{paint();renderLegend();}});
 
 /* ───────── 시작 ───────── */
 syncParams();setExport(false);setState('idle','대기');

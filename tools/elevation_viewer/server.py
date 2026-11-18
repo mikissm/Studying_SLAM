@@ -14,6 +14,7 @@ import numpy as np
 from scipy import ndimage
 from scipy.spatial import Delaunay, QhullError
 from layered import extract_layered
+from planner import evaluate as evaluate_robot, plan as plan_route, REASONS as ROBOT_REASONS
 
 ROOT = Path(__file__).resolve().parent
 MAX_UPLOAD = 512 * 1024**2
@@ -373,6 +374,27 @@ class Handler(SimpleHTTPRequestHandler):
                     if revision!=state.revision: raise ValueError('맵이 변경됐습니다')
                     state.result=(token,result)
                 return self.send({'token':token,'meta':meta,'cells':centers.tolist(),'reason':reason.tolist(),'counts':counts.tolist(),'roughness':rough.tolist(),'blocked':meta.get('cell_blocked',(reason==6).tolist()),'clearance':meta.get('cell_clearance',[None]*len(centers))})
+            if path in ('/api/robot','/api/plan'):
+                with state.lock: saved=state.result; points=state.points; revision=state.revision
+                if not saved or saved[0]!=request.get('token'):raise ValueError('지면 결과가 변경됐습니다. 최신 결과에서 다시 계획하세요')
+                ev=evaluate_robot(saved[1],request.get('robot',{}),points,rotation)
+                response={'robot':ev['robot'],'cell_codes':ev['cell_codes'].tolist(),
+                          'cell_slopes':ev['slope'][np.floor((saved[1][0][:,1]-ev['meta']['origin_xy'][1])/ev['meta']['resolution']).astype(int),np.floor((saved[1][0][:,0]-ev['meta']['origin_xy'][0])/ev['meta']['resolution']).astype(int)].tolist(),
+                          'allowed_cells':int(ev['allowed'].sum()),'reason_labels':ROBOT_REASONS}
+                labels,n=ndimage.label(ev['allowed'])
+                suggestions=[]
+                if n:
+                    sizes=np.bincount(labels.ravel());sizes[0]=0
+                    ys,xs=np.where(labels==int(np.argmax(sizes)))
+                    if len(xs)>1:
+                        center=np.array([ys.mean(),xs.mean()]);xy=np.column_stack((ys,xs))
+                        a=int(np.argmax(np.linalg.norm(xy-center,axis=1)));b=int(np.argmax(np.linalg.norm(xy-xy[a],axis=1)))
+                        for i in [a,b]:suggestions.append([float(ev['meta']['origin_xy'][0]+(xs[i]+.5)*ev['meta']['resolution']),float(ev['meta']['origin_xy'][1]+(ys[i]+.5)*ev['meta']['resolution']),float(ev['ground'][ys[i],xs[i]])])
+                response['suggested']=suggestions
+                if path=='/api/plan':response.update(plan_route(ev,request.get('start'),request.get('goal')))
+                with state.lock:
+                    if revision!=state.revision or state.result is None or state.result[0]!=saved[0]:raise ValueError('계산 중 지면 결과가 변경됐습니다')
+                return self.send(response)
             if path=='/api/export':
                 with state.lock: saved=state.result
                 if not saved or saved[0]!=request['token']: raise ValueError('결과가 변경됐습니다. 현재 결과로 다시 저장하세요')
