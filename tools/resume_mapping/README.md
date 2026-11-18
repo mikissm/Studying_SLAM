@@ -80,3 +80,16 @@ source install/setup.bash
 ```
 
 기하 테스트는 ICP, 좌표 합성, 실패 거부, 원본 보호와 저장 재로딩, 용량 한도의 원자성을 검증합니다. ROS 테스트는 모의 점군/odom을 발행하고 실제 ROS 서비스로 정합→누적→정지→저장을 검증합니다. 실제 MID360 주행 검증은 별도로 필요합니다.
+
+## 누적 점군 색상 구분
+
+전용 RViz는 원본 지도(`/resume_mapping/saved`)를 회색, 원본에 없던 voxel(`/resume_mapping/added`)을 초록색으로 표시합니다. 아래 표시 노드를 재개 매핑과 함께 실행하세요. `map_path`와 `resolution`은 매핑 노드의 입력과 일치해야 합니다. 매핑 노드 재시작 없이 실행할 수 있습니다.
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source /home/ssm/slam_ws/install/setup.bash
+/usr/bin/python3 /home/ssm/slam_ws/Studying_SLAM/tools/resume_mapping/map_overlay.py --ros-args \
+  -p map_path:=/home/ssm/maps/test1/map.pcd -p resolution:=0.1
+```
+
+초록색은 최초 저장 지도 대비 추가된 voxel이며 최신 스캔 전체가 아닙니다. 이미 채워진 voxel의 재관측은 색을 바꾸지 않습니다. 센서 잡음이나 오정합으로 기존 벽 주변에 추가된 점도 초록색으로 보일 수 있습니다. 합쳐진 지도 저장 방식은 그대로입니다.
